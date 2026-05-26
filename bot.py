@@ -2,6 +2,7 @@ import imaplib
 import email
 import time
 import json
+import re
 import requests
 import os
 from dotenv import load_dotenv
@@ -50,11 +51,8 @@ def extraer_datos_con_groq(cuerpo_mail):
     prompt = f"""
 Analizá este mail de pedido y extraé los siguientes datos en formato JSON exacto:
 {{
-  "numero_pedido": "...",
-  "cliente": "...",
-  "telefono": "...",
-  "productos": "lista de productos con color, cantidad y precio en una sola línea",
-  "total": "...",
+  "cliente": "nombre del cliente",
+  "telefono": "numero de telefono",
   "metodo_pago": "uno de: transferencia | efectivo | mercado pago",
   "metodo_envio": "uno de: correo argentino | retiro en domicilio | cadete"
 }}
@@ -86,6 +84,19 @@ MAIL:
     return json.loads(text)
 
 
+def extraer_productos_y_total(cuerpo_mail):
+    productos = []
+    for linea in cuerpo_mail.split("\n"):
+        linea = linea.strip()
+        if linea.startswith("-"):
+            productos.append(linea)
+
+    match_total = re.search(r'Total:\s*\$?([\d.,]+)', cuerpo_mail)
+    total = f"${match_total.group(1)}" if match_total else "?"
+
+    return "\n".join(productos) if productos else "Ver detalle en mail", total
+
+
 def enviar_whatsapp(mensaje):
     url = "https://api.callmebot.com/whatsapp.php"
     params = {
@@ -115,6 +126,10 @@ def leer_mails_nuevos():
         _, msg_data = mail.fetch(mail_id, "(RFC822)")
         msg = email.message_from_bytes(msg_data[0][1])
 
+        asunto = msg.get("Subject", "")
+        match = re.search(r'#(\d+)', asunto)
+        numero_pedido = match.group(1) if match else "?"
+
         cuerpo = ""
         if msg.is_multipart():
             for part in msg.walk():
@@ -124,18 +139,20 @@ def leer_mails_nuevos():
         else:
             cuerpo = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
 
-        print(f"\n📧 Procesando pedido...\n{cuerpo[:200]}...")
+        print(f"\n📧 Procesando pedido #{numero_pedido}...\n{cuerpo[:200]}...")
 
         try:
             datos = extraer_datos_con_groq(cuerpo)
+            productos, total = extraer_productos_y_total(cuerpo)
+
             print(f"✅ Datos extraídos: {datos}")
 
-            resumen = f"{datos.get('productos', 'Ver detalle en mail')}\n💰 Total: ${datos.get('total', '?')}"
+            resumen = f"{productos}\n💰 Total: {total}"
             pago = datos.get("metodo_pago") or ""
             envio = datos.get("metodo_envio") or ""
             mensaje_cliente = get_mensaje(pago, envio, resumen)
 
-            mensaje_para_vos = f"""🔔 *NUEVO PEDIDO #{datos.get('numero_pedido', '?')}*
+            mensaje_para_vos = f"""🔔 *NUEVO PEDIDO #{numero_pedido}*
 
 👤 Cliente: {datos.get('cliente', '?')}
 📱 Tel: {datos.get('telefono') or 'No encontrado'}
