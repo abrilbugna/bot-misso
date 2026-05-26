@@ -10,7 +10,7 @@ load_dotenv()
 
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 CALLMEBOT_API_KEY = os.getenv("CALLMEBOT_API_KEY")
 TU_NUMERO_WHATSAPP = os.getenv("TU_NUMERO_WHATSAPP")
 TU_DIRECCION = os.getenv("TU_DIRECCION")
@@ -44,8 +44,8 @@ def get_mensaje(pago, envio, resumen_pedido):
         return saludo + f"Nos comunicaremos a la brevedad para coordinar los detalles de tu pedido. (Pago: {pago} | Envío: {envio})"
 
 
-def extraer_datos_con_gemini(cuerpo_mail):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={GEMINI_API_KEY}"
+def extraer_datos_con_groq(cuerpo_mail):
+    url = "https://api.groq.com/openai/v1/chat/completions"
 
     prompt = f"""
 Analizá este mail de pedido y extraé los siguientes datos en formato JSON exacto:
@@ -66,11 +66,21 @@ MAIL:
 {cuerpo_mail}
 """
 
-    body = {"contents": [{"parts": [{"text": prompt}]}]}
-    response = requests.post(url, json=body)
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    body = {
+        "model": "llama-3.1-8b-instant",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0
+    }
+
+    response = requests.post(url, headers=headers, json=body)
     result = response.json()
 
-    text = result["candidates"][0]["content"]["parts"][0]["text"]
+    text = result["choices"][0]["message"]["content"]
     text = text.strip().replace("```json", "").replace("```", "").strip()
 
     return json.loads(text)
@@ -117,7 +127,7 @@ def leer_mails_nuevos():
         print(f"\n📧 Procesando pedido...\n{cuerpo[:200]}...")
 
         try:
-            datos = extraer_datos_con_gemini(cuerpo)
+            datos = extraer_datos_con_groq(cuerpo)
             print(f"✅ Datos extraídos: {datos}")
 
             resumen = f"{datos.get('productos', 'Ver detalle en mail')}\n💰 Total: ${datos.get('total', '?')}"
