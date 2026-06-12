@@ -5,6 +5,8 @@ import json
 import re
 import requests
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,6 +17,26 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 CALLMEBOT_API_KEY = os.getenv("CALLMEBOT_API_KEY")
 TU_NUMERO_WHATSAPP = os.getenv("TU_NUMERO_WHATSAPP")
 TU_DIRECCION = os.getenv("TU_DIRECCION")
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+
+def iniciar_servidor():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    server.serve_forever()
 
 
 def get_mensaje(pago, envio, resumen_pedido):
@@ -173,6 +195,8 @@ def leer_mails_nuevos():
 
 
 if __name__ == "__main__":
+    threading.Thread(target=iniciar_servidor, daemon=True).start()
+
     print("🤖 Bot Misso iniciado. Revisando mails cada 2 minutos...")
     while True:
         try:
